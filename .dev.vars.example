@@ -1,2 +1,5 @@
-# Copia a .dev.vars para `npm run dev`. En producción: `wrangler secret put CHALLENGE_SECRET`.
+# Copia a .dev.vars para `npm run dev`. En producción: `wrangler secret put <NOMBRE>`.
 CHALLENGE_SECRET=cambia-esto-por-algo-largo-y-aleatorio
+NULLIFIER_SECRET=cambia-esto-por-otra-cosa-larga-y-aleatoria
+# node scripts/new-poll-key.mjs <encuesta>  → la privada queda en .poll-keys/<encuesta>.pkcs8
+POLL_KEYS='{"prueba-2026-11":"<contenido de .poll-keys/prueba-2026-11.pkcs8>"}'

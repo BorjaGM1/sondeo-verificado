@@ -34,7 +34,7 @@ export function b64ToBytes(b64) {
   return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
 
-function bytesToB64url(bytes) {
+export function bytesToB64url(bytes) {
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");

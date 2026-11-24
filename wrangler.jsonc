@@ -2,7 +2,17 @@
   "name": "sondeo-verificado",
   "main": "src/worker.js",
   "compatibility_date": "2026-11-01",
+  // El cliente (client/main.js) se empaqueta en public/app.js en cada deploy.
+  "build": { "command": "npm run build" },
   "assets": { "directory": "./public" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sondeo-verificado",
+      "database_id": "77713229-a792-41d6-976a-684fb81f2200",
+      "migrations_dir": "migrations"
+    }
+  ],
   // Nada de logs: no queremos IPs ni peticiones guardadas.
   "observability": { "enabled": false }
 }

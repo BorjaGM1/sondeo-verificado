@@ -35,22 +35,32 @@ envía {T, S, respuesta,
                                                                    guarda la papeleta
 ```
 
-- **Identificación (spike actual)**: el Worker da un reto; el usuario lo firma con su certificado de la
+- **Identificación** (`src/identity.js`): el Worker da un reto; el usuario lo firma con su certificado de la
   FNMT usando Autofirma (`AutoScript.sign(datos, "SHA256withRSA", "NONE", …)`, firma PKCS#1 sin más).
   En escritorio Autofirma devuelve la firma por un WebSocket local (`wss://127.0.0.1`), así que **no
   hace falta el servidor intermedio de Java**. El Worker verifica con WebCrypto: firma del reto, cadena
   hasta la CA de la FNMT, vigencia, y extrae el DNI del campo `serialNumber` (`IDCES-12345678Z`).
-- **Emisión ciega**: firmas ciegas RSA (RFC 9474), con `@cloudflare/blindrsa-ts` en navegador y Worker.
-  Una clave por encuesta. El reto incluye `hash(B)` para que la firma con el certificado autorice
-  exactamente esa petición.
-- **Voto**: va a otro endpoint con el token desciegado. El servidor no puede relacionar `T` con `B`.
+- **Emisión ciega** (`POST /api/issue`): RSABSSA-SHA384-PSS-Randomized (RFC 9474) con
+  `@cloudflare/blindrsa-ts` en navegador (`client/main.js`) y Worker (`src/app.js`). Una clave por
+  encuesta: la pública está en `src/polls.js`, la privada en el secreto `POLL_KEYS`
+  (`scripts/new-poll-key.mjs`). El reto incluye `hash(B)` para que la firma con el certificado autorice
+  exactamente ese token cegado. En Workers la firma usa la operación RSA nativa (`supportsRSARAW`):
+  en JS puro tarda ~230 ms y se pasaría del límite de CPU del plan gratuito.
+- **Voto** (`POST /api/vote`): llega el token desciegado. El servidor no puede relacionar `T` con `B`.
+- **Público**: `GET /api/polls/:id/results` (recuento bruto + tokens emitidos) y
+  `GET /api/polls/:id/ballots` (tablón con todas las papeletas y la clave pública para verificarlas).
+- Si pierdes el token (otro navegador, borras datos) antes de votar, no puedes sacar otro: el
+  nullifier ya está gastado. Es el precio de no guardar nada que te relacione con el token.
 
 ## Qué se guarda
 
 | Tabla | Contenido | ¿Identifica? |
 |---|---|---|
-| `nullifiers` | `HMAC(k, DNI ‖ encuesta)` | Seudónimo: el operador podría comprobar si un DNI concreto participó (no qué votó) |
-| `papeletas` | `T`, `S`, respuesta, demografía declarada | No |
+| `nullifiers` | `HMAC(k, encuesta:DNI)` | Seudónimo: el operador podría comprobar si un DNI concreto participó (no qué votó) |
+| `ballots` | `T`, `S`, respuesta, edad, sexo, CCAA, recuerdo de voto | No |
+
+Las dos tablas son `WITHOUT ROWID`: se guardan ordenadas por clave, no por orden de llegada, y el
+tablón se publica ordenado por token.
 
 Nada más: ni IPs, ni DNIs, ni certificados. Logs de Workers desactivados.
 
@@ -103,7 +113,9 @@ Cloudflare Workers + assets estáticos + D1. Deploy solo desde GitHub Actions.
 - [x] Obtener e incluir las CAs de la FNMT (`certs/`)
 - [x] Desplegado en https://sondeo-verificado.borjitaea.workers.dev
 - [x] Probar con Autofirma y un certificado real (Windows, 2026-11-24: OK)
-- [ ] Emisión ciega + endpoint de voto + D1
-- [ ] Tablón público de papeletas y recuento
+- [x] Emisión ciega + endpoint de voto + D1
+- [x] Tablón público de papeletas y recuento bruto
+- [ ] Probar el flujo completo con un certificado real
+- [ ] Repo público en GitHub + deploy desde Actions
 - [ ] Ponderación
 - [ ] OCSP
