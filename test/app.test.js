@@ -2,13 +2,12 @@
 // D1 se simula con node:sqlite usando la migración real.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import "reflect-metadata";
 import * as x509 from "@peculiar/x509";
 import { RSABSSA } from "@cloudflare/blindrsa-ts";
 import { createApp } from "../src/app.js";
-import { DEMOGRAPHICS } from "../src/polls.js";
 
 const RSA = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256", publicExponent: new Uint8Array([1, 0, 1]), modulusLength: 2048 };
 const DAY = 86400000;
@@ -19,7 +18,8 @@ const unb64 = (s) => new Uint8Array(Buffer.from(s, "base64url"));
 
 function fakeD1() {
   const db = new DatabaseSync(":memory:");
-  db.exec(readFileSync(new URL("../migrations/0001_init.sql", import.meta.url), "utf8"));
+  const dir = new URL("../migrations/", import.meta.url);
+  for (const f of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) db.exec(readFileSync(new URL(f, dir), "utf8"));
   return {
     prepare(sql) {
       let args = [];
@@ -61,11 +61,11 @@ async function citizen(serial) {
 const POLL = {
   id: "test", title: "Test", question: "¿?", options: ["A", "B", "No lo sé"],
   opensAt: new Date(Date.now() - DAY).toISOString(), closesAt: new Date(Date.now() + DAY).toISOString(),
-  embargo: [], allowNie: false, publicKey: spki,
+  embargo: [], allowNie: false, minVotes: 1, publicKey: spki,
 };
 
 function setup({ poll = POLL } = {}) {
-  const app = createApp({ anchors: [ca], polls: [poll], demographics: DEMOGRAPHICS });
+  const app = createApp({ anchors: [ca], polls: [poll] });
   const DB = fakeD1();
   const env = { DB, CHALLENGE_SECRET: "c", NULLIFIER_SECRET: "n", POLL_KEYS: JSON.stringify({ [poll.id]: pkcs8 }) };
   const call = async (method, path, body) => {
@@ -90,14 +90,12 @@ async function getToken(call, person, { pollId = "test", tamperBind = false } = 
   return { res, token: b64url(token), signature: b64url(signature) };
 }
 
-const demo = { edad: "35-44", sexo: "Mujer", ccaa: "Madrid", recuerdo: "No voté" };
-
 test("flujo completo: token ciego, voto, resultados y tablón", async () => {
   const { call, DB } = setup();
   const { res, token, signature } = await getToken(call, await citizen("IDCES-12345678Z"));
   assert.equal(res.status, 200);
 
-  assert.deepEqual((await call("POST", "/api/vote", { pollId: "test", token, signature, answer: "B", ...demo })).body, { ok: true });
+  assert.deepEqual((await call("POST", "/api/vote", { pollId: "test", token, signature, answer: "B" })).body, { ok: true });
 
   const results = (await call("GET", "/api/polls/test/results")).body;
   assert.equal(results.tokensIssued, 1);
@@ -132,8 +130,8 @@ test("un DNI solo saca un token por encuesta", async () => {
 test("un token solo vota una vez", async () => {
   const { call } = setup();
   const { token, signature } = await getToken(call, await citizen("IDCES-12345678Z"));
-  await call("POST", "/api/vote", { pollId: "test", token, signature, answer: "A", ...demo });
-  const again = await call("POST", "/api/vote", { pollId: "test", token, signature, answer: "B", ...demo });
+  await call("POST", "/api/vote", { pollId: "test", token, signature, answer: "A" });
+  const again = await call("POST", "/api/vote", { pollId: "test", token, signature, answer: "B" });
   assert.equal(again.status, 409);
   assert.equal(again.body.error, "already_voted");
 });
@@ -142,9 +140,9 @@ test("rechaza tokens no firmados por la encuesta", async () => {
   const { call } = setup();
   const { token, signature } = await getToken(call, await citizen("IDCES-12345678Z"));
   const forged = b64url(crypto.getRandomValues(new Uint8Array(64)));
-  assert.equal((await call("POST", "/api/vote", { pollId: "test", token: forged, signature, answer: "A", ...demo })).body.error, "bad_token");
+  assert.equal((await call("POST", "/api/vote", { pollId: "test", token: forged, signature, answer: "A" })).body.error, "bad_token");
   const otherSig = b64url(crypto.getRandomValues(new Uint8Array(256)));
-  assert.equal((await call("POST", "/api/vote", { pollId: "test", token, signature: otherSig, answer: "A", ...demo })).body.error, "bad_token");
+  assert.equal((await call("POST", "/api/vote", { pollId: "test", token, signature: otherSig, answer: "A" })).body.error, "bad_token");
 });
 
 test("la firma del certificado debe autorizar exactamente ese token cegado", async () => {
@@ -161,11 +159,12 @@ test("NIE no puede votar si la encuesta no lo permite", async () => {
   assert.equal(res.body.error, "nie_not_allowed");
 });
 
-test("valida respuesta y demografía", async () => {
-  const { call } = setup();
+test("valida la respuesta y no guarda campos extra", async () => {
+  const { call, DB } = setup();
   const { token, signature } = await getToken(call, await citizen("IDCES-12345678Z"));
-  assert.equal((await call("POST", "/api/vote", { pollId: "test", token, signature, answer: "Z", ...demo })).body.error, "bad_answer");
-  assert.equal((await call("POST", "/api/vote", { pollId: "test", token, signature, answer: "A", ...demo, ccaa: "Narnia" })).body.error, "bad_ccaa");
+  assert.equal((await call("POST", "/api/vote", { pollId: "test", token, signature, answer: "Z" })).body.error, "bad_answer");
+  await call("POST", "/api/vote", { pollId: "test", token, signature, answer: "A", edad: "35-44" });
+  assert.deepEqual(Object.keys(DB.raw.prepare("SELECT * FROM ballots").get()).sort(), ["answer", "poll_id", "signature", "token"]);
 });
 
 test("encuesta cerrada: ni tokens ni votos", async () => {
@@ -173,6 +172,27 @@ test("encuesta cerrada: ni tokens ni votos", async () => {
   const { call } = setup({ poll: closed });
   const { res } = await getToken(call, await citizen("IDCES-12345678Z"));
   assert.equal(res.body.error, "poll_closed");
+});
+
+test("por debajo del mínimo de votos no se publica nada", async () => {
+  const { call } = setup({ poll: { ...POLL, minVotes: 2 } });
+  const first = await getToken(call, await citizen("IDCES-12345678Z"));
+  await call("POST", "/api/vote", { pollId: "test", token: first.token, signature: first.signature, answer: "A" });
+  for (const path of ["/api/polls/test/results", "/api/polls/test/ballots"]) {
+    const r = await call("GET", path);
+    assert.equal(r.status, 403);
+    assert.deepEqual(r.body, { ok: false, error: "below_min_votes", votes: 1, minVotes: 2 });
+  }
+  const second = await getToken(call, await citizen("IDCES-00000000T"));
+  await call("POST", "/api/vote", { pollId: "test", token: second.token, signature: second.signature, answer: "B" });
+  assert.equal((await call("GET", "/api/polls/test/results")).body.votes, 2);
+  assert.equal((await call("GET", "/api/polls/test/ballots")).body.ballots.length, 2);
+});
+
+test("sin minVotes explícito, el mínimo es 100", async () => {
+  const { minVotes, ...noMin } = POLL;
+  const { call } = setup({ poll: noMin });
+  assert.equal((await call("GET", "/api/polls/test/results")).body.minVotes, 100);
 });
 
 test("embargo LOREG: no se publican resultados ni papeletas", async () => {

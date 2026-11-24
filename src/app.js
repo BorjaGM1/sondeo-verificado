@@ -7,7 +7,6 @@ import { createChallenge, verifyIdentity, IdentityError, b64ToBytes, bytesToB64u
 const enc = new TextEncoder();
 const PSS = { name: "RSA-PSS", hash: "SHA-384" };
 const TOKEN_BYTES = 64; // 32 de aleatoriedad que añade prepare() + 32 del mensaje
-const DEMO_FIELDS = ["edad", "sexo", "ccaa", "recuerdo"];
 
 class ApiError extends Error {
   constructor(status, code, extra) {
@@ -52,14 +51,14 @@ async function hmacB64url(secret, text) {
   return bytesToB64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(text))));
 }
 
-const publicPoll = ({ id, title, question, options, opensAt, closesAt, embargo, allowNie, publicKey }) => ({
-  id, title, question, options, opensAt, closesAt, embargo, allowNie, publicKey,
+const publicPoll = ({ id, title, question, options, opensAt, closesAt, embargo, allowNie, minVotes, publicKey }) => ({
+  id, title, question, options, opensAt, closesAt, embargo, allowNie, minVotes, publicKey,
 });
 
 /**
- * @param {{anchors: any[], polls: any[], demographics: Record<string,string[]>, rsaRaw?: boolean, now?: () => number}} deps
+ * @param {{anchors: any[], polls: any[], rsaRaw?: boolean, now?: () => number}} deps
  */
-export function createApp({ anchors, polls, demographics, rsaRaw = false, now = Date.now }) {
+export function createApp({ anchors, polls, rsaRaw = false, now = Date.now }) {
   const suite = RSABSSA.SHA384.PSS.Randomized({ supportsRSARAW: rsaRaw });
   const byId = new Map(polls.map((p) => [p.id, p]));
   const keyCache = new Map();
@@ -75,10 +74,15 @@ export function createApp({ anchors, polls, demographics, rsaRaw = false, now = 
     if (t < Date.parse(poll.opensAt) || t > Date.parse(poll.closesAt)) throw new ApiError(403, "poll_closed");
   }
 
-  function assertNotEmbargoed(poll) {
+  // Con pocos votos el anonimato no protege: si solo ha votado una persona conocida, su papeleta
+  // es la única. No se publica nada (ni recuento ni tablón) hasta llegar al mínimo.
+  async function assertPublishable(poll, env) {
     const t = now();
     const w = poll.embargo.find((e) => t >= Date.parse(e.from) && t <= Date.parse(e.until));
     if (w) throw new ApiError(451, "embargo_loreg", { until: w.until });
+    const minVotes = poll.minVotes ?? 100;
+    const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM ballots WHERE poll_id = ?").bind(poll.id).first();
+    if (n < minVotes) throw new ApiError(403, "below_min_votes", { votes: n, minVotes });
   }
 
   // Las claves tienen que ser exportables: la librería hace la aritmética RSA por su cuenta.
@@ -140,19 +144,18 @@ export function createApp({ anchors, polls, demographics, rsaRaw = false, now = 
     if (!valid) throw new ApiError(400, "bad_token");
 
     if (!poll.options.includes(body.answer)) throw new ApiError(400, "bad_answer");
-    for (const f of DEMO_FIELDS) if (!demographics[f].includes(body[f])) throw new ApiError(400, `bad_${f}`);
 
     const { meta } = await env.DB.prepare(
-      "INSERT OR IGNORE INTO ballots (poll_id, token, signature, answer, edad, sexo, ccaa, recuerdo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR IGNORE INTO ballots (poll_id, token, signature, answer) VALUES (?, ?, ?, ?)",
     )
-      .bind(poll.id, bytesToB64url(token), bytesToB64url(signature), body.answer, body.edad, body.sexo, body.ccaa, body.recuerdo)
+      .bind(poll.id, bytesToB64url(token), bytesToB64url(signature), body.answer)
       .run();
     if (!meta.changes) throw new ApiError(409, "already_voted");
     return json({ ok: true });
   }
 
   async function results(poll, env) {
-    assertNotEmbargoed(poll);
+    await assertPublishable(poll, env);
     const issued = await env.DB.prepare("SELECT COUNT(*) AS n FROM nullifiers WHERE poll_id = ?").bind(poll.id).first();
     const { results: rows } = await env.DB.prepare(
       "SELECT answer, COUNT(*) AS n FROM ballots WHERE poll_id = ? GROUP BY answer",
@@ -166,9 +169,9 @@ export function createApp({ anchors, polls, demographics, rsaRaw = false, now = 
   }
 
   async function ballots(poll, env) {
-    assertNotEmbargoed(poll);
+    await assertPublishable(poll, env);
     const { results: rows } = await env.DB.prepare(
-      "SELECT token, signature, answer, edad, sexo, ccaa, recuerdo FROM ballots WHERE poll_id = ? ORDER BY token",
+      "SELECT token, signature, answer FROM ballots WHERE poll_id = ? ORDER BY token",
     )
       .bind(poll.id)
       .all();
@@ -180,7 +183,7 @@ export function createApp({ anchors, polls, demographics, rsaRaw = false, now = 
       const { pathname } = new URL(request.url);
       const route = `${request.method} ${pathname}`;
       try {
-        if (route === "GET /api/polls") return json({ polls: polls.map(publicPoll), demographics });
+        if (route === "GET /api/polls") return json({ polls: polls.map(publicPoll) });
         if (route === "POST /api/challenge") {
           const { bind = "" } = await readJson(request);
           return json({ challenge: await createChallenge(env.CHALLENGE_SECRET, bind, now()) });

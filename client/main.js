@@ -19,7 +19,13 @@ const ERRORS = {
   untrusted_issuer: "Tu certificado no es de persona física de la FNMT.",
   certificate_expired: "Tu certificado está caducado.",
 };
-const explain = (r) => ERRORS[r.error] ?? `Error: ${r.error}`;
+const explain = (r) => {
+  if (r.error === "below_min_votes") {
+    return `Llevamos ${r.votes} de ${r.minVotes} votos. Hasta llegar a ${r.minVotes} no se publican resultados ni papeletas: con pocos votos se podría adivinar quién ha votado qué.`;
+  }
+  if (r.error === "embargo_loreg") return `Resultados ocultos por la LOREG hasta ${new Date(r.until).toLocaleString("es")}.`;
+  return ERRORS[r.error] ?? `Error: ${r.error}`;
+};
 
 async function api(method, path, body) {
   const res = await fetch(path, {
@@ -53,29 +59,17 @@ function status(el, text, kind = "") {
   el.className = `status ${kind}`;
 }
 
-function select(name, label, options) {
-  const opts = options.map((o) => `<option>${o}</option>`).join("");
-  return `<label>${label}<select name="${name}" required><option value="">—</option>${opts}</select></label>`;
-}
-
 async function main() {
-  const { polls, demographics } = await api("GET", "/api/polls");
+  const { polls } = await api("GET", "/api/polls");
   const wanted = new URLSearchParams(location.search).get("encuesta");
   const poll = polls.find((p) => p.id === wanted) ?? polls[0];
   const publicKey = await crypto.subtle.importKey("spki", fromB64(poll.publicKey), PSS, true, ["verify"]);
   let state = { ...store.get(poll.id) };
 
   $("title").textContent = poll.title;
-  $("form-fields").innerHTML = [
-    `<fieldset><legend>${poll.question}</legend>${poll.options
-      .map((o) => `<label class="opt"><input type="radio" name="answer" value="${o}" required> ${o}</label>`)
-      .join("")}</fieldset>`,
-    `<p class="hint">Para poder ponderar el resultado (se publica junto a tu voto, sin nada que te identifique):</p>`,
-    select("edad", "Edad", demographics.edad),
-    select("sexo", "Sexo", demographics.sexo),
-    select("ccaa", "Comunidad autónoma", demographics.ccaa),
-    select("recuerdo", "¿Qué votaste en las generales de julio de 2023?", demographics.recuerdo),
-  ].join("");
+  $("form-fields").innerHTML = `<fieldset><legend>${poll.question}</legend>${poll.options
+    .map((o) => `<label class="opt"><input type="radio" name="answer" value="${o}" required> ${o}</label>`)
+    .join("")}</fieldset>`;
 
   function render() {
     $("step-identify").hidden = !!state.token;
@@ -122,6 +116,9 @@ async function main() {
   // Paso 3: cualquiera puede comprobar que su papeleta está en el tablón.
   $("check").addEventListener("click", async () => {
     const r = await api("GET", `/api/polls/${poll.id}/ballots`);
+    if (r.error === "below_min_votes") {
+      return status($("check-status"), `Podrás comprobarlo cuando haya ${r.minVotes} votos (vamos por ${r.votes}). Tu token queda guardado en este navegador.`);
+    }
     if (r.error) return status($("check-status"), explain(r), "error");
     const mine = r.ballots.find((b) => b.token === state.token);
     status($("check-status"), mine ? `Está en el tablón: «${mine.answer}».` : "No aparece en el tablón.", mine ? "ok" : "error");
@@ -136,8 +133,8 @@ async function main() {
 async function loadResults(poll) {
   const res = await api("GET", `/api/polls/${poll.id}/results`);
   $("results").innerHTML = res.error
-    ? `<p>${res.error === "embargo_loreg" ? `Resultados ocultos por la LOREG hasta ${new Date(res.until).toLocaleString("es")}.` : explain(res)}</p>`
-    : `<p>${res.votes} votos · ${res.tokensIssued} tokens emitidos · dato bruto, sin ponderar</p><table>${Object.entries(res.counts)
+    ? `<p>${explain(res)}</p>`
+    :`<p>${res.votes} votos · ${res.tokensIssued} tokens emitidos · dato bruto, sin ponderar: refleja a quien tiene certificado y ha votado aquí, no a toda España</p><table>${Object.entries(res.counts)
         .sort((a, b) => b[1] - a[1])
         .map(([k, n]) => `<tr><td>${k}</td><td>${n}</td><td>${res.votes ? ((100 * n) / res.votes).toFixed(1) : "0.0"}%</td></tr>`)
         .join("")}</table>`;
