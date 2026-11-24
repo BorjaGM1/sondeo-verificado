@@ -1,0 +1,8 @@
+{
+  "name": "sondeo-verificado",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "./public" },
+  // Nada de logs: no queremos IPs ni peticiones guardadas.
+  "observability": { "enabled": false }
+}

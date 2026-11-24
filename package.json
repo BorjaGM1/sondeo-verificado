@@ -1,0 +1,16 @@
+{
+  "name": "sondeo-verificado",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "@peculiar/x509": "^3.1.0",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "wrangler": "^4.167.0"
+  }
+}

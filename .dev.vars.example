@@ -1,0 +1,2 @@
+# Copia a .dev.vars para `npm run dev`. En producción: `wrangler secret put CHALLENGE_SECRET`.
+CHALLENGE_SECRET=cambia-esto-por-algo-largo-y-aleatorio

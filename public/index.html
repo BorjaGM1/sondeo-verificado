@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sondeo verificado — prueba de identificación</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
+    button { font: inherit; padding: .6rem 1.2rem; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 1rem; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>Prueba: identificarse con certificado digital</h1>
+  <p>Firma un texto aleatorio con tu certificado de la FNMT usando <strong>Autofirma</strong>
+     (tiene que estar instalada). El servidor comprueba la firma y te devuelve tu DNI enmascarado.
+     No se guarda nada.</p>
+  <button id="go">Identificarme con Autofirma</button>
+  <pre id="out">—</pre>
+  <script src="/vendor/autoscript.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
