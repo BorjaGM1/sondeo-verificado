@@ -4,58 +4,235 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sondeo verificado</title>
+  <meta name="description" content="Encuestas de intención de voto anónimas pero verificadas con certificado digital.">
   <style>
-    :root { --fg: #1a1a1a; --muted: #666; --bg: #fff; --box: #f4f4f4; --ok: #0a7a3a; --err: #b3261e; }
-    @media (prefers-color-scheme: dark) { :root { --fg: #eee; --muted: #aaa; --bg: #161616; --box: #242424; --ok: #5fd08a; --err: #ff8a80; } }
-    body { font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
-    section { background: var(--box); padding: 1rem 1.25rem; border-radius: 8px; margin: 1rem 0; }
-    button { font: inherit; padding: .6rem 1.2rem; cursor: pointer; }
-    fieldset { border: 0; padding: 0; margin: 0 0 1rem; }
-    legend { font-weight: 600; margin-bottom: .5rem; }
-    .opt { display: block; padding: .15rem 0; }
-    .hint, small { color: var(--muted); }
-    .status.ok { color: var(--ok); } .status.error { color: var(--err); }
-    table { border-collapse: collapse; width: 100%; } td { padding: .2rem .4rem; border-bottom: 1px solid var(--muted); }
-    td:not(:first-child) { text-align: right; }
-    code { word-break: break-all; }
+    /* Sin fuentes externas: cargar Google Fonts filtraría la IP de cada votante a un tercero. */
+    :root {
+      --paper: #f5f3ee; --surface: #fffdf9; --ink: #17150f; --ink-2: #4b473e; --ink-3: #868174;
+      --line: #dcd7cb; --line-2: #ebe7de; --ok: #1d6b43; --err: #a8321f;
+      --serif: ui-serif, "Iowan Old Style", Charter, "Bitstream Charter", "Source Serif Pro", Georgia, serif;
+      --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      --radius: 10px;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --paper: #121110; --surface: #1b1a17; --ink: #f1ede4; --ink-2: #bcb6a9; --ink-3: #858072;
+        --line: #34312b; --line-2: #26241f; --ok: #6fcf97; --err: #ff8f7a; color-scheme: dark;
+      }
+    }
+    :root[data-theme="dark"] {
+      --paper: #121110; --surface: #1b1a17; --ink: #f1ede4; --ink-2: #bcb6a9; --ink-3: #858072;
+      --line: #34312b; --line-2: #26241f; --ok: #6fcf97; --err: #ff8f7a; color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.55 var(--sans); }
+    a { color: inherit; text-decoration-color: var(--ink-3); text-underline-offset: 3px; }
+    a:hover { text-decoration-color: currentColor; }
+    .wrap { max-width: 44rem; margin: 0 auto; padding: 0 1rem; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    /* Cabecera */
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.25rem 0; border-bottom: 1px solid var(--line); }
+    .mark { font-family: var(--serif); font-size: 1.15rem; font-weight: 600; text-decoration: none; letter-spacing: -.01em; }
+    .mark span { color: var(--ink-3); font-weight: 400; margin: 0 .1em; }
+    .top nav { display: flex; gap: 1.25rem; font-size: .9rem; color: var(--ink-2); }
+    .top nav a { text-decoration: none; }
+    .top nav a:hover { color: var(--ink); }
+
+    /* Portada */
+    .hero { padding: 3rem 0 2rem; }
+    .eyebrow { display: inline-flex; align-items: center; gap: .5rem; margin: 0 0 1rem; font-size: .8rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+    .eyebrow::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: var(--ok); }
+    .eyebrow.closed::before { background: var(--ink-3); }
+    h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(1.9rem, 5.5vw, 2.8rem); line-height: 1.12; letter-spacing: -.02em; margin: 0 0 1rem; text-wrap: balance; }
+    .lede { font-size: 1.1rem; color: var(--ink-2); margin: 0; max-width: 36rem; }
+
+    /* Pasos */
+    .steps { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin: 0 0 1rem; padding: 0; counter-reset: s; }
+    .steps li { display: flex; align-items: center; gap: .55rem; padding-top: .7rem; border-top: 3px solid var(--line); font-size: .9rem; color: var(--ink-3); }
+    .steps .n { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 1.5px solid currentColor; font-size: .75rem; font-weight: 700; flex: none; }
+    .steps li.current { border-top-color: var(--ink); color: var(--ink); font-weight: 600; }
+    .steps li.done { border-top-color: var(--ink-2); color: var(--ink-2); }
+    .steps li.done .n { background: var(--ink-2); border-color: var(--ink-2); color: var(--paper); font-size: 0; }
+    .steps li.done .n::after { content: "✓"; font-size: .8rem; }
+
+    /* Tarjeta del paso activo */
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.5rem; margin: 0 0 3rem; }
+    .card h2 { font-family: var(--serif); font-size: 1.45rem; font-weight: 600; letter-spacing: -.01em; margin: 0 0 .5rem; }
+    .card > p { margin: 0 0 1.25rem; color: var(--ink-2); }
+    .note { font-size: .85rem; color: var(--ink-3) !important; margin: .9rem 0 0 !important; }
+
+    .btn { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.9rem; padding: .7rem 1.3rem; border: 1px solid var(--ink); border-radius: 8px; background: var(--ink); color: var(--paper); font: 600 1rem/1 var(--sans); cursor: pointer; transition: opacity .15s, transform .05s; }
+    .btn:hover:not(:disabled) { opacity: .88; }
+    .btn:active:not(:disabled) { transform: translateY(1px); }
+    .btn:disabled { opacity: .35; cursor: not-allowed; }
+    .btn:focus-visible, .option input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
+    .btn-ghost { background: transparent; color: var(--ink); }
+    .btn[aria-busy="true"]::before { content: ""; width: .9rem; height: .9rem; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status { margin: 1rem 0 0; font-size: .95rem; min-height: 0; }
+    .status:empty { display: none; }
+    .status.ok { color: var(--ok); }
+    .status.error { color: var(--err); }
+
+    /* Opciones de voto */
+    .options { border: 0; padding: 0; margin: 0 0 1.25rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: .5rem; }
+    .option { position: relative; display: block; cursor: pointer; }
+    .option input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+    .option span { display: flex; align-items: center; min-height: 3rem; padding: .6rem .85rem; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); font-size: .95rem; line-height: 1.25; transition: border-color .12s, background .12s; }
+    .option:hover span { border-color: var(--ink-3); }
+    .option input:checked + span { border-color: var(--ink); background: var(--ink); color: var(--paper); font-weight: 600; }
+    .option.secondary span { color: var(--ink-2); }
+
+    .token { display: block; font: .85rem/1.4 var(--mono); padding: .75rem .9rem; margin: 0 0 1.25rem; background: var(--paper); border: 1px dashed var(--line); border-radius: 8px; word-break: break-all; color: var(--ink-2); }
+
+    /* Bloques */
+    .block { padding: 2.5rem 0; border-top: 1px solid var(--line); }
+    .block h2 { font-family: var(--serif); font-size: 1.6rem; font-weight: 600; letter-spacing: -.01em; margin: 0 0 1.25rem; }
+    .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+    .block-head a { font-size: .9rem; color: var(--ink-2); white-space: nowrap; }
+
+    /* Umbral y resultados */
+    .meter-num { font-family: var(--serif); font-size: 2.6rem; font-weight: 600; letter-spacing: -.02em; line-height: 1; margin: 0 0 .75rem; }
+    .meter-num small { font-size: 1rem; font-family: var(--sans); font-weight: 400; color: var(--ink-3); letter-spacing: 0; margin-left: .35rem; }
+    .meter { height: .5rem; border-radius: 99px; background: var(--line-2); overflow: hidden; margin: 0 0 1rem; }
+    .meter > i { display: block; height: 100%; background: var(--ink); border-radius: inherit; }
+    .muted { color: var(--ink-2); margin: 0; }
+    .rows { list-style: none; margin: 0 0 1rem; padding: 0; }
+    .row { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr 3.5rem; align-items: center; gap: .75rem; padding: .45rem 0; border-bottom: 1px solid var(--line-2); font-size: .95rem; }
+    .row .bar { height: .65rem; background: var(--line-2); border-radius: 99px; overflow: hidden; }
+    .row .bar i { display: block; height: 100%; background: var(--ink-2); border-radius: inherit; }
+    .row:first-child .bar i { background: var(--ink); }
+    .row b { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+    .row .n { color: var(--ink-3); font-weight: 400; font-size: .8rem; display: block; }
+    .fine { font-size: .85rem; color: var(--ink-3); margin: 0; }
+
+    /* Cómo funciona */
+    .how { list-style: none; margin: 0 0 2rem; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; counter-reset: how; }
+    .how li { counter-increment: how; }
+    .how li::before { content: counter(how); display: block; font-family: var(--serif); font-size: 2rem; font-weight: 600; color: var(--ink-3); line-height: 1; margin-bottom: .5rem; }
+    .how h3 { font-size: 1rem; margin: 0 0 .35rem; }
+    .how p { margin: 0; font-size: .92rem; color: var(--ink-2); }
+    .caveats { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.25rem 1.5rem; }
+    .caveats h3 { font-size: 1rem; margin: 0 0 .5rem; }
+    .caveats ul { margin: 0 0 .75rem; padding-left: 1.1rem; color: var(--ink-2); font-size: .92rem; }
+    .caveats li + li { margin-top: .35rem; }
+    .caveats a { font-size: .9rem; }
+
+    footer { border-top: 1px solid var(--line); padding: 1.75rem 0 3rem; font-size: .85rem; color: var(--ink-3); }
+    footer p { margin: 0 0 .4rem; }
+    footer code { font-family: var(--mono); color: var(--ink-2); }
+
+    @media (max-width: 560px) {
+      .hero { padding: 2rem 0 1.5rem; }
+      .steps li { font-size: .8rem; gap: .4rem; }
+      .card { padding: 1.15rem; }
+      .options { grid-template-columns: repeat(2, 1fr); }
+      .how { grid-template-columns: 1fr; gap: 1.25rem; }
+      .row { grid-template-columns: minmax(6rem, 1fr) 1fr 3.2rem; }
+      .top nav { gap: .9rem; }
+    }
   </style>
 </head>
 <body>
-  <h1 id="title">Sondeo verificado</h1>
-  <p class="hint">Una persona con DNI, un voto. Nadie, ni quien opera esto, puede saber qué has votado.
-    <a href="https://github.com/BorjaGM1/sondeo-verificado">Código, diseño y despliegues</a>.</p>
+  <div class="wrap">
+    <header class="top">
+      <a class="mark" href="/">sondeo<span>/</span>verificado</a>
+      <nav>
+        <a href="#como">Cómo funciona</a>
+        <a href="https://github.com/BorjaGM1/sondeo-verificado">Código</a>
+      </nav>
+    </header>
 
-  <section id="step-identify" hidden>
-    <h2>1. Demuestra que eres una persona real</h2>
-    <p>Firmarás un texto aleatorio con tu certificado digital de la FNMT usando <strong>Autofirma</strong>
-      (solo ordenador). Antes, tu navegador genera un <em>token</em> secreto y lo oculta: el servidor lo firma sin verlo.</p>
-    <button id="identify">Identificarme con Autofirma</button>
-    <p id="identify-status" class="status"></p>
-  </section>
+    <main>
+      <section class="hero">
+        <p class="eyebrow" id="eyebrow">Cargando encuesta…</p>
+        <h1 id="question">&nbsp;</h1>
+        <p class="lede">Una persona con DNI, un voto. Nadie —ni quien opera esto— puede saber qué has votado.</p>
+      </section>
 
-  <section id="step-vote" hidden>
-    <h2>2. Vota</h2>
-    <p class="hint">Ya tienes tu token, guardado en este navegador. Puedes votar ahora o más tarde
-      (esperar un rato hace aún más difícil relacionar tu identificación con tu voto).</p>
-    <form id="vote-form">
-      <div id="form-fields"></div>
-      <button type="submit">Enviar voto</button>
-      <p id="vote-status" class="status"></p>
-    </form>
-  </section>
+      <ol class="steps" aria-label="Pasos">
+        <li data-step="identify"><span class="n">1</span>Identifícate</li>
+        <li data-step="vote"><span class="n">2</span>Vota</li>
+        <li data-step="done"><span class="n">3</span>Comprueba</li>
+      </ol>
 
-  <section id="step-done" hidden>
-    <h2>Voto registrado</h2>
-    <p>Tu token: <code id="my-token"></code></p>
-    <button id="check">Comprobar que mi voto está en el tablón</button>
-    <p id="check-status" class="status"></p>
-  </section>
+      <section class="card" id="step-identify" hidden>
+        <h2>Demuestra que eres una persona real</h2>
+        <p>Firmarás un texto aleatorio con tu certificado digital de la FNMT usando Autofirma.
+          Antes, tu navegador crea un token secreto y lo oculta: el servidor lo firma sin llegar a verlo.</p>
+        <button class="btn" id="identify">Identificarme con Autofirma</button>
+        <p class="note" id="identify-note">Necesitas un ordenador con Autofirma y tu certificado instalados.</p>
+        <p id="identify-status" class="status" role="status"></p>
+      </section>
 
-  <section>
-    <h2>Resultados</h2>
-    <div id="results">Cargando…</div>
-    <p><small><a id="ballots-link">Tablón público de papeletas (JSON)</a>: cualquiera puede recontar y verificar cada firma.</small></p>
-  </section>
+      <section class="card" id="step-vote" hidden>
+        <h2>Elige tu respuesta</h2>
+        <p>Tu token está guardado en este navegador. Puedes votar ahora o más tarde: esperar un rato hace
+          aún más difícil relacionar tu identificación con tu voto.</p>
+        <form id="vote-form">
+          <fieldset class="options" id="options"></fieldset>
+          <button class="btn" type="submit" id="vote-btn" disabled>Enviar voto</button>
+          <p id="vote-status" class="status" role="status"></p>
+        </form>
+      </section>
+
+      <section class="card" id="step-done" hidden>
+        <h2>Voto registrado</h2>
+        <p>Tu papeleta está en el tablón público, identificada solo por este token:</p>
+        <code class="token" id="my-token"></code>
+        <button class="btn btn-ghost" id="check">Comprobar que mi voto está en el tablón</button>
+        <p id="check-status" class="status" role="status"></p>
+      </section>
+
+      <section class="block" aria-labelledby="results-title">
+        <div class="block-head">
+          <h2 id="results-title">Resultados</h2>
+          <a id="ballots-link">Tablón público ↗</a>
+        </div>
+        <div id="results"><p class="muted">Cargando…</p></div>
+      </section>
+
+      <section class="block" id="como" aria-labelledby="how-title">
+        <h2 id="how-title">Cómo funciona</h2>
+        <ol class="how">
+          <li>
+            <h3>Tu navegador oculta un token</h3>
+            <p>Genera un número secreto y lo mete en un «sobre» criptográfico (firma ciega, RFC 9474).</p>
+          </li>
+          <li>
+            <h3>El servidor lo firma sin verlo</h3>
+            <p>Comprueba tu certificado, apunta que ese DNI ya tiene token para esta encuesta y firma el sobre cerrado.</p>
+          </li>
+          <li>
+            <h3>Votas con el token</h3>
+            <p>Tu navegador abre el sobre y vota con él. El servidor ve una firma válida, pero no sabe de quién es.</p>
+          </li>
+        </ol>
+        <div class="caveats">
+          <h3>Lo que no podemos garantizar</h3>
+          <ul>
+            <li>Que el servidor ejecute exactamente el código publicado. Por eso el anonimato depende de tu navegador, no del servidor.</li>
+            <li>Quien opera el servicio podría cruzar IP y hora de identificación con las del voto. Votar más tarde lo dificulta.</li>
+            <li>El resultado es la foto de quien tiene certificado y vota aquí, no de toda España.</li>
+          </ul>
+          <a href="https://github.com/BorjaGM1/sondeo-verificado/blob/main/DESIGN.md">Diseño completo ↗</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Código abierto. Cada versión se despliega desde
+        <a href="https://github.com/BorjaGM1/sondeo-verificado/actions/workflows/deploy.yml">GitHub Actions</a>, con logs públicos.</p>
+      <p>Huella del código que ejecuta tu navegador: <code id="code-hash" title="SHA-256 de /app.js">…</code>
+        — compárala con la del último despliegue.</p>
+    </footer>
+  </div>
 
   <script src="/vendor/autoscript.js"></script>
   <script type="module" src="/app.js"></script>

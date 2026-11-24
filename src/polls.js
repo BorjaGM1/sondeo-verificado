@@ -9,8 +9,9 @@ export const POLLS = [
     title: "Prueba: intención de voto en elecciones generales",
     question: "Si mañana se celebrasen elecciones generales, ¿a qué partido votarías?",
     options: [...PARTIDOS, "Otro partido", "En blanco", "Nulo", "No votaría", "No lo sé"],
-    opensAt: "2026-11-24T00:00:00Z",
-    closesAt: "2026-12-31T23:59:59Z",
+    // Horas de España peninsular (CET en invierno).
+    opensAt: "2026-11-24T00:00:00+01:00",
+    closesAt: "2026-12-31T23:59:59+01:00",
     // LOREG art. 69.7: ventanas en las que no se publican resultados ni papeletas.
     embargo: [],
     // Para generales solo votan españoles: el certificado debe llevar DNI, no NIE.
