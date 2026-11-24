@@ -5,7 +5,7 @@
   "scripts": {
     "build": "esbuild client/main.js --bundle --format=esm --platform=browser --target=es2022 --outfile=public/app.js",
     "dev": "npm run build && wrangler dev",
-    "test": "node --test test/"
+    "test": "node --test \"test/*.test.js\""
   },
   "dependencies": {
     "@cloudflare/blindrsa-ts": "^0.4.6",
