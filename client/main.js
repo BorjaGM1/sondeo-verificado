@@ -19,13 +19,7 @@ const ERRORS = {
   untrusted_issuer: "Tu certificado no es de persona física de la FNMT.",
   certificate_expired: "Tu certificado está caducado.",
 };
-const explain = (r) => {
-  if (r.error === "below_min_votes") {
-    return `Llevamos ${r.votes} de ${r.minVotes} votos. Hasta llegar a ${r.minVotes} no se publican resultados ni papeletas: con pocos votos se podría adivinar quién ha votado qué.`;
-  }
-  if (r.error === "embargo_loreg") return `Resultados ocultos por la LOREG hasta ${new Date(r.until).toLocaleString("es")}.`;
-  return ERRORS[r.error] ?? `Error: ${r.error}`;
-};
+const explain = (r) => ERRORS[r.error] ?? `Error: ${r.error}`;
 
 async function api(method, path, body) {
   const res = await fetch(path, {
@@ -92,7 +86,7 @@ async function main() {
 
   function render() {
     const step = !state.token ? "identify" : !state.voted ? "vote" : "done";
-    const order = ["identify", "vote", "done"];
+    const order = ["identify", "vote", "done"]; // "done": los dos pasos completados
     for (const li of document.querySelectorAll(".steps li")) {
       const i = order.indexOf(li.dataset.step);
       li.classList.toggle("current", li.dataset.step === step);
@@ -103,7 +97,6 @@ async function main() {
     $("step-identify").hidden = step !== "identify" || !open;
     $("step-vote").hidden = step !== "vote" || !open;
     $("step-done").hidden = step !== "done";
-    if (state.voted) $("my-token").textContent = state.token;
   }
 
   // Paso 1: token ciego autorizado por tu certificado.
@@ -150,24 +143,9 @@ async function main() {
     state = { ...state, voted: true };
     store.set(poll.id, state);
     render();
-    loadResults(poll);
   });
 
-  // Paso 3: cualquiera puede comprobar que su papeleta está en el tablón.
-  $("check").addEventListener("click", async () => {
-    const btn = $("check");
-    busy(btn, true);
-    const r = await api("GET", `/api/polls/${poll.id}/ballots`);
-    busy(btn, false);
-    if (r.error === "below_min_votes") {
-      return status($("check-status"), `Podrás comprobarlo cuando haya ${r.minVotes} votos (vamos por ${r.votes}). Tu token queda guardado en este navegador.`);
-    }
-    if (r.error) return status($("check-status"), explain(r), "error");
-    const mine = r.ballots.find((b) => b.token === state.token);
-    status($("check-status"), mine ? `Está en el tablón: «${mine.answer}».` : "No aparece en el tablón.", mine ? "ok" : "error");
-  });
 
-  $("ballots-link").href = `/api/polls/${poll.id}/ballots`;
   // En móvil Autofirma no firma desde el navegador (y su librería muestra un aviso propio al cargar).
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   if (isMobile) {
@@ -179,33 +157,8 @@ async function main() {
   }
   render();
   showCodeHash();
-  await loadResults(poll);
 }
 
-async function loadResults(poll) {
-  const res = await api("GET", `/api/polls/${poll.id}/results`);
-  const el = $("results");
-  if (res.error === "below_min_votes") {
-    const pct = Math.min(100, (100 * res.votes) / res.minVotes);
-    el.innerHTML = `<p class="meter-num">${res.votes}<small>de ${res.minVotes} votos</small></p>
-      <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="${res.minVotes}" aria-valuenow="${res.votes}"><i style="width:${pct}%"></i></div>
-      <p class="muted">Los resultados y el tablón se publican al llegar a ${res.minVotes} votos. Con menos, se podría adivinar quién ha votado qué.</p>`;
-    return;
-  }
-  if (res.error) {
-    el.innerHTML = `<p class="muted">${esc(explain(res))}</p>`;
-    return;
-  }
-  const rows = Object.entries(res.counts).sort((a, b) => b[1] - a[1]);
-  const max = Math.max(1, ...rows.map(([, n]) => n));
-  el.innerHTML = `<ul class="rows">${rows
-    .map(([k, n]) => {
-      const pct = res.votes ? (100 * n) / res.votes : 0;
-      return `<li class="row"><span>${esc(k)}</span><span class="bar"><i style="width:${(100 * n) / max}%"></i></span><b>${pct.toFixed(1)}%<span class="n">${n}</span></b></li>`;
-    })
-    .join("")}</ul>
-    <p class="fine">${res.votes} votos · ${res.tokensIssued} tokens emitidos. Dato bruto, sin ponderar: refleja a quien tiene certificado y ha votado aquí, no a toda España.</p>`;
-}
 
 // Huella del código que ejecuta este navegador, para compararla con la del log de despliegue.
 async function showCodeHash() {
@@ -221,5 +174,5 @@ async function showCodeHash() {
 
 main().catch((e) => {
   $("eyebrow").textContent = "No se pudo cargar";
-  $("results").innerHTML = `<p class="status error">${esc(e.message)}</p>`;
+  $("question").textContent = e.message;
 });

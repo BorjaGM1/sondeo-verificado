@@ -1,17 +1,18 @@
 # Sondeo verificado — diseño
 
 Encuestas de intención de voto **anónimas pero verificadas**: una persona real = un voto por encuesta,
-sin que ni el operador pueda saber qué votó cada uno, y con un recuento que cualquiera puede rehacer.
+sin que ni el operador pueda saber qué votó cada uno.
 
 Todo el código es público. La idea de fondo: **no hace falta fiarse del servidor**. Las propiedades
-importantes se garantizan en el navegador (código estático auditable) y en datos públicos.
+importantes se garantizan en el navegador (código estático auditable).
 
 ## Propiedades que buscamos
 
 1. **Unicidad**: cada DNI obtiene como mucho un token por encuesta.
 2. **Anonimato frente al operador**: el servidor que ve tu DNI no puede relacionarlo con tu voto.
-3. **Recuento verificable**: todas las papeletas se publican; cualquiera recuenta y cada votante comprueba la suya.
-4. **Transparencia del resultado**: se publica el dato bruto, sin cocina. No se pondera (ver abajo).
+3. **No se publican votos** (decisión del 2026-11-24): ni la web ni la API muestran resultados ni
+   papeletas. Se renuncia al recuento verificable por terceros: el resultado lo saca el operador de D1.
+4. **Sin cocina**: el resultado es el dato bruto. No se pondera (ver abajo).
 
 ## Flujo
 
@@ -46,8 +47,8 @@ envía {T, S, respuesta} ──────────────────�
   exactamente ese token cegado. En Workers la firma usa la operación RSA nativa (`supportsRSARAW`):
   en JS puro tarda ~230 ms y se pasaría del límite de CPU del plan gratuito.
 - **Voto** (`POST /api/vote`): llega el token desciegado. El servidor no puede relacionar `T` con `B`.
-- **Público**: `GET /api/polls/:id/results` (recuento bruto + tokens emitidos) y
-  `GET /api/polls/:id/ballots` (tablón con todas las papeletas y la clave pública para verificarlas).
+- **Resultados**: no hay endpoint. El operador los consulta en D1:
+  `npx wrangler d1 execute sondeo-verificado --remote --command "SELECT answer, COUNT(*) AS n FROM ballots WHERE poll_id = '<encuesta>' GROUP BY answer ORDER BY n DESC"`
 - Si pierdes el token (otro navegador, borras datos) antes de votar, no puedes sacar otro: el
   nullifier ya está gastado. Es el precio de no guardar nada que te relacione con el token.
 
@@ -58,15 +59,13 @@ envía {T, S, respuesta} ──────────────────�
 | `nullifiers` | `HMAC(k, encuesta:DNI)` | Seudónimo: el operador podría comprobar si un DNI concreto participó (no qué votó) |
 | `ballots` | `T`, `S`, respuesta | No |
 
-Las dos tablas son `WITHOUT ROWID`: se guardan ordenadas por clave, no por orden de llegada, y el
-tablón se publica ordenado por token.
+Las dos tablas son `WITHOUT ROWID`: se guardan ordenadas por clave, no por orden de llegada.
 
 D1 guarda copias para restaurar (Time Travel, unos 30 días): borrar filas no las elimina de inmediato
 para quien opere la cuenta de Cloudflare.
 
-**Mínimo de votos** (`minVotes`, 100 por defecto): hasta llegar no se publica ni el recuento ni el
-tablón. Con pocos votos el anonimato no sirve: si solo ha votado alguien que lo ha dicho en público,
-su papeleta es la única.
+**Al publicar resultados a mano**: con pocos votos el anonimato no sirve (si solo ha votado alguien que
+lo ha dicho en público, su voto es el único). No publicar nada con menos de ~100 votos.
 
 Nada más: ni IPs, ni DNIs, ni certificados. Logs de Workers desactivados.
 
@@ -78,8 +77,8 @@ Nada más: ni IPs, ni DNIs, ni certificados. Logs de Workers desactivados.
 - **Correlación por IP y hora**: quien opera ambos endpoints podría cruzar "identificado a las 20:01
   desde IP X" con "votó a las 20:01 desde IP X". Mitigación: el token se guarda en el navegador y se
   puede votar más tarde; se recomienda hacerlo.
-- **Emisión fraudulenta**: el operador podría emitir tokens a DNIs inventados. Se publica el número de
-  tokens emitidos, pero detectar relleno requiere auditoría externa.
+- **Emisión fraudulenta**: el operador podría emitir tokens a DNIs inventados o meter votos. Sin
+  tablón público nadie de fuera puede detectarlo: el resultado depende de fiarse del operador.
 
 ## Límites del certificado de la FNMT
 
@@ -106,8 +105,8 @@ cartera EUDI con atributos), se puede volver a plantear.
 
 ## Legal
 
-- **LOREG art. 69.7**: prohibido publicar sondeos en los 5 días anteriores a la votación. La web
-  oculta resultados (también los parciales y el contador) en esa ventana.
+- **LOREG art. 69.7**: prohibido publicar sondeos en los 5 días anteriores a la votación. La web no
+  publica nada; la restricción aplica a cuando el operador difunda los resultados.
 - **RGPD**: la opinión política es categoría especial. No guardamos nada que la relacione con una
   persona; el nullifier es dato seudonimizado de participación y hay que tratarlo como tal.
 
@@ -122,8 +121,8 @@ Cloudflare Workers + assets estáticos + D1. Deploy solo desde GitHub Actions.
 - [x] Desplegado en https://sondeo-verificado.borjitaea.workers.dev
 - [x] Probar con Autofirma y un certificado real (Windows, 2026-11-24: OK)
 - [x] Emisión ciega + endpoint de voto + D1
-- [x] Tablón público de papeletas y recuento bruto
+- [x] Tablón público de papeletas y recuento bruto (retirado después: no se publican votos)
 - [x] Probar el flujo completo con un certificado real (2026-11-24: OK)
 - [x] Repo público en GitHub + deploy desde Actions
-- [x] Mínimo de votos antes de publicar
+- [x] Mínimo de votos antes de publicar (retirado junto con el tablón)
 - [ ] OCSP

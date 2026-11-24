@@ -61,7 +61,7 @@ async function citizen(serial) {
 const POLL = {
   id: "test", title: "Test", question: "¿?", options: ["A", "B", "No lo sé"],
   opensAt: new Date(Date.now() - DAY).toISOString(), closesAt: new Date(Date.now() + DAY).toISOString(),
-  embargo: [], allowNie: false, minVotes: 1, publicKey: spki,
+  allowNie: false, publicKey: spki,
 };
 
 function setup({ poll = POLL } = {}) {
@@ -90,24 +90,18 @@ async function getToken(call, person, { pollId = "test", tamperBind = false } = 
   return { res, token: b64url(token), signature: b64url(signature) };
 }
 
-test("flujo completo: token ciego, voto, resultados y tablón", async () => {
+test("flujo completo: token ciego y voto", async () => {
   const { call, DB } = setup();
   const { res, token, signature } = await getToken(call, await citizen("IDCES-12345678Z"));
   assert.equal(res.status, 200);
 
   assert.deepEqual((await call("POST", "/api/vote", { pollId: "test", token, signature, answer: "B" })).body, { ok: true });
 
-  const results = (await call("GET", "/api/polls/test/results")).body;
-  assert.equal(results.tokensIssued, 1);
-  assert.equal(results.votes, 1);
-  assert.deepEqual(results.counts, { A: 0, B: 1, "No lo sé": 0 });
-
-  const board = (await call("GET", "/api/polls/test/ballots")).body;
-  assert.equal(board.ballots.length, 1);
-  assert.equal(board.ballots[0].token, token);
-  // Cualquiera puede verificar una papeleta del tablón con la clave pública.
-  const pk = await crypto.subtle.importKey("spki", unb64(board.publicKey), { name: "RSA-PSS", hash: "SHA-384" }, true, ["verify"]);
-  assert.ok(await suite.verify(pk, unb64(board.ballots[0].signature), unb64(board.ballots[0].token)));
+  assert.equal(DB.raw.prepare("SELECT COUNT(*) AS n FROM nullifiers").get().n, 1);
+  const ballots = DB.raw.prepare("SELECT token, signature, answer FROM ballots").all();
+  assert.deepEqual(ballots.map((b) => [b.token, b.answer]), [[token, "B"]]);
+  // La papeleta guardada se puede verificar con la clave pública de la encuesta.
+  assert.ok(await suite.verify(pollKeys.publicKey, unb64(ballots[0].signature), unb64(ballots[0].token)));
 
   // En la base de datos no hay ni rastro del DNI.
   const dump = JSON.stringify(DB.raw.prepare("SELECT * FROM nullifiers").all());
@@ -174,33 +168,11 @@ test("encuesta cerrada: ni tokens ni votos", async () => {
   assert.equal(res.body.error, "poll_closed");
 });
 
-test("por debajo del mínimo de votos no se publica nada", async () => {
-  const { call } = setup({ poll: { ...POLL, minVotes: 2 } });
-  const first = await getToken(call, await citizen("IDCES-12345678Z"));
-  await call("POST", "/api/vote", { pollId: "test", token: first.token, signature: first.signature, answer: "A" });
+test("la API no publica resultados ni papeletas", async () => {
+  const { call } = setup();
   for (const path of ["/api/polls/test/results", "/api/polls/test/ballots"]) {
-    const r = await call("GET", path);
-    assert.equal(r.status, 403);
-    assert.deepEqual(r.body, { ok: false, error: "below_min_votes", votes: 1, minVotes: 2 });
+    assert.equal((await call("GET", path)).status, 404);
   }
-  const second = await getToken(call, await citizen("IDCES-00000000T"));
-  await call("POST", "/api/vote", { pollId: "test", token: second.token, signature: second.signature, answer: "B" });
-  assert.equal((await call("GET", "/api/polls/test/results")).body.votes, 2);
-  assert.equal((await call("GET", "/api/polls/test/ballots")).body.ballots.length, 2);
-});
-
-test("sin minVotes explícito, el mínimo es 100", async () => {
-  const { minVotes, ...noMin } = POLL;
-  const { call } = setup({ poll: noMin });
-  assert.equal((await call("GET", "/api/polls/test/results")).body.minVotes, 100);
-});
-
-test("embargo LOREG: no se publican resultados ni papeletas", async () => {
-  const until = new Date(Date.now() + DAY).toISOString();
-  const { call } = setup({ poll: { ...POLL, embargo: [{ from: new Date(Date.now() - 1000).toISOString(), until }] } });
-  for (const path of ["/api/polls/test/results", "/api/polls/test/ballots"]) {
-    const r = await call("GET", path);
-    assert.equal(r.status, 451);
-    assert.deepEqual(r.body, { ok: false, error: "embargo_loreg", until });
-  }
+  const { polls } = (await call("GET", "/api/polls")).body;
+  assert.deepEqual(Object.keys(polls[0]).sort(), ["allowNie", "closesAt", "id", "opensAt", "options", "publicKey", "question", "title"]);
 });

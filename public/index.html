@@ -52,7 +52,7 @@
     .lede { font-size: 1.1rem; color: var(--ink-2); margin: 0; max-width: 36rem; }
 
     /* Pasos */
-    .steps { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin: 0 0 1rem; padding: 0; counter-reset: s; }
+    .steps { list-style: none; display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem; margin: 0 0 1rem; padding: 0; }
     .steps li { display: flex; align-items: center; gap: .55rem; padding-top: .7rem; border-top: 3px solid var(--line); font-size: .9rem; color: var(--ink-3); }
     .steps .n { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 1.5px solid currentColor; font-size: .75rem; font-weight: 700; flex: none; }
     .steps li.current { border-top-color: var(--ink); color: var(--ink); font-weight: 600; }
@@ -71,7 +71,6 @@
     .btn:active:not(:disabled) { transform: translateY(1px); }
     .btn:disabled { opacity: .35; cursor: not-allowed; }
     .btn:focus-visible, .option input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
-    .btn-ghost { background: transparent; color: var(--ink); }
     .btn[aria-busy="true"]::before { content: ""; width: .9rem; height: .9rem; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -89,28 +88,11 @@
     .option input:checked + span { border-color: var(--ink); background: var(--ink); color: var(--paper); font-weight: 600; }
     .option.secondary span { color: var(--ink-2); }
 
-    .token { display: block; font: .85rem/1.4 var(--mono); padding: .75rem .9rem; margin: 0 0 1.25rem; background: var(--paper); border: 1px dashed var(--line); border-radius: 8px; word-break: break-all; color: var(--ink-2); }
 
     /* Bloques */
     .block { padding: 2.5rem 0; border-top: 1px solid var(--line); }
     .block h2 { font-family: var(--serif); font-size: 1.6rem; font-weight: 600; letter-spacing: -.01em; margin: 0 0 1.25rem; }
-    .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-    .block-head a { font-size: .9rem; color: var(--ink-2); white-space: nowrap; }
 
-    /* Umbral y resultados */
-    .meter-num { font-family: var(--serif); font-size: 2.6rem; font-weight: 600; letter-spacing: -.02em; line-height: 1; margin: 0 0 .75rem; }
-    .meter-num small { font-size: 1rem; font-family: var(--sans); font-weight: 400; color: var(--ink-3); letter-spacing: 0; margin-left: .35rem; }
-    .meter { height: .5rem; border-radius: 99px; background: var(--line-2); overflow: hidden; margin: 0 0 1rem; }
-    .meter > i { display: block; height: 100%; background: var(--ink); border-radius: inherit; }
-    .muted { color: var(--ink-2); margin: 0; }
-    .rows { list-style: none; margin: 0 0 1rem; padding: 0; }
-    .row { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr 3.5rem; align-items: center; gap: .75rem; padding: .45rem 0; border-bottom: 1px solid var(--line-2); font-size: .95rem; }
-    .row .bar { height: .65rem; background: var(--line-2); border-radius: 99px; overflow: hidden; }
-    .row .bar i { display: block; height: 100%; background: var(--ink-2); border-radius: inherit; }
-    .row:first-child .bar i { background: var(--ink); }
-    .row b { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
-    .row .n { color: var(--ink-3); font-weight: 400; font-size: .8rem; display: block; }
-    .fine { font-size: .85rem; color: var(--ink-3); margin: 0; }
 
     /* Cómo funciona */
     .how { list-style: none; margin: 0 0 2rem; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; counter-reset: how; }
@@ -134,7 +116,6 @@
       .card { padding: 1.15rem; }
       .options { grid-template-columns: repeat(2, 1fr); }
       .how { grid-template-columns: 1fr; gap: 1.25rem; }
-      .row { grid-template-columns: minmax(6rem, 1fr) 1fr 3.2rem; }
       .top nav { gap: .9rem; }
     }
   </style>
@@ -159,7 +140,6 @@
       <ol class="steps" aria-label="Pasos">
         <li data-step="identify"><span class="n">1</span>Identifícate</li>
         <li data-step="vote"><span class="n">2</span>Vota</li>
-        <li data-step="done"><span class="n">3</span>Comprueba</li>
       </ol>
 
       <section class="card" id="step-identify" hidden>
@@ -184,19 +164,9 @@
 
       <section class="card" id="step-done" hidden>
         <h2>Voto registrado</h2>
-        <p>Tu papeleta está en el tablón público, identificada solo por este token:</p>
-        <code class="token" id="my-token"></code>
-        <button class="btn btn-ghost" id="check">Comprobar que mi voto está en el tablón</button>
-        <p id="check-status" class="status" role="status"></p>
+        <p>Gracias. Tu voto está guardado sin nada que te identifique y no se puede cambiar.</p>
       </section>
 
-      <section class="block" aria-labelledby="results-title">
-        <div class="block-head">
-          <h2 id="results-title">Resultados</h2>
-          <a id="ballots-link">Tablón público ↗</a>
-        </div>
-        <div id="results"><p class="muted">Cargando…</p></div>
-      </section>
 
       <section class="block" id="como" aria-labelledby="how-title">
         <h2 id="how-title">Cómo funciona</h2>
@@ -217,9 +187,16 @@
         <div class="caveats">
           <h3>Lo que no podemos garantizar</h3>
           <ul>
-            <li>Que el servidor ejecute exactamente el código publicado. Por eso el anonimato depende de tu navegador, no del servidor.</li>
-            <li>Quien opera el servicio podría cruzar IP y hora de identificación con las del voto. Votar más tarde lo dificulta.</li>
-            <li>El resultado es la foto de quien tiene certificado y vota aquí, no de toda España.</li>
+            <li><strong>Qué código corre en el servidor.</strong> El código es público, pero nadie de fuera puede
+              comprobar que el servidor ejecuta exactamente ese. Por eso el anonimato no depende del servidor:
+              el token se oculta en tu navegador, con código que sí puedes revisar (su huella está al pie).</li>
+            <li><strong>Que no se crucen tu IP y la hora.</strong> Al identificarte y al votar, tu ordenador se conecta
+              desde la misma IP y casi a la vez. Quien opera el servidor podría guardar eso y emparejar ambas
+              cosas. No guardamos IPs ni registros, pero no puedes comprobarlo. Para más garantía, vota otro día
+              o desde otra red (por ejemplo, compartiendo datos del móvil).</li>
+            <li><strong>Que el recuento sea correcto.</strong> Las papeletas no se publican, así que nadie de fuera
+              puede recontarlas: hay que fiarse de quien opera el servicio.</li>
+            <li><strong>Que represente a toda España.</strong> Solo vota quien tiene certificado digital y llega hasta aquí.</li>
           </ul>
           <a href="https://github.com/BorjaGM1/sondeo-verificado/blob/main/DESIGN.md">Diseño completo ↗</a>
         </div>

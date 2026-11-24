@@ -51,8 +51,8 @@ async function hmacB64url(secret, text) {
   return bytesToB64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(text))));
 }
 
-const publicPoll = ({ id, title, question, options, opensAt, closesAt, embargo, allowNie, minVotes, publicKey }) => ({
-  id, title, question, options, opensAt, closesAt, embargo, allowNie, minVotes, publicKey,
+const publicPoll = ({ id, title, question, options, opensAt, closesAt, allowNie, publicKey }) => ({
+  id, title, question, options, opensAt, closesAt, allowNie, publicKey,
 });
 
 /**
@@ -74,16 +74,6 @@ export function createApp({ anchors, polls, rsaRaw = false, now = Date.now }) {
     if (t < Date.parse(poll.opensAt) || t > Date.parse(poll.closesAt)) throw new ApiError(403, "poll_closed");
   }
 
-  // Con pocos votos el anonimato no protege: si solo ha votado una persona conocida, su papeleta
-  // es la única. No se publica nada (ni recuento ni tablón) hasta llegar al mínimo.
-  async function assertPublishable(poll, env) {
-    const t = now();
-    const w = poll.embargo.find((e) => t >= Date.parse(e.from) && t <= Date.parse(e.until));
-    if (w) throw new ApiError(451, "embargo_loreg", { until: w.until });
-    const minVotes = poll.minVotes ?? 100;
-    const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM ballots WHERE poll_id = ?").bind(poll.id).first();
-    if (n < minVotes) throw new ApiError(403, "below_min_votes", { votes: n, minVotes });
-  }
 
   // Las claves tienen que ser exportables: la librería hace la aritmética RSA por su cuenta.
   async function keys(poll, env) {
@@ -154,29 +144,6 @@ export function createApp({ anchors, polls, rsaRaw = false, now = Date.now }) {
     return json({ ok: true });
   }
 
-  async function results(poll, env) {
-    await assertPublishable(poll, env);
-    const issued = await env.DB.prepare("SELECT COUNT(*) AS n FROM nullifiers WHERE poll_id = ?").bind(poll.id).first();
-    const { results: rows } = await env.DB.prepare(
-      "SELECT answer, COUNT(*) AS n FROM ballots WHERE poll_id = ? GROUP BY answer",
-    )
-      .bind(poll.id)
-      .all();
-    const counts = Object.fromEntries(poll.options.map((o) => [o, 0]));
-    for (const r of rows) counts[r.answer] = r.n;
-    const votes = rows.reduce((s, r) => s + r.n, 0);
-    return json({ pollId: poll.id, tokensIssued: issued.n, votes, counts });
-  }
-
-  async function ballots(poll, env) {
-    await assertPublishable(poll, env);
-    const { results: rows } = await env.DB.prepare(
-      "SELECT token, signature, answer FROM ballots WHERE poll_id = ? ORDER BY token",
-    )
-      .bind(poll.id)
-      .all();
-    return json({ pollId: poll.id, publicKey: poll.publicKey, scheme: "RSABSSA-SHA384-PSS-Randomized", ballots: rows });
-  }
 
   return {
     async fetch(request, env) {
@@ -190,12 +157,6 @@ export function createApp({ anchors, polls, rsaRaw = false, now = Date.now }) {
         }
         if (route === "POST /api/issue") return await issue(await readJson(request), env);
         if (route === "POST /api/vote") return await vote(await readJson(request), env);
-
-        const m = /^GET \/api\/polls\/([a-z0-9-]+)\/(results|ballots)$/.exec(route);
-        if (m) {
-          const poll = getPoll(m[1]);
-          return m[2] === "results" ? await results(poll, env) : await ballots(poll, env);
-        }
         return json({ error: "not_found" }, 404);
       } catch (err) {
         if (err instanceof ApiError) return json({ ok: false, error: err.code, ...err.extra }, err.status);
